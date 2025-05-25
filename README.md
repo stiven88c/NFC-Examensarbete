@@ -1,32 +1,71 @@
-# _Sample project_
+NFC-WebServer Example
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+Det här är ett enkelt exempel på en HTTP-server för ESP32 som låter dig:
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+Namnge enhet (Device ID) och spara det i NVS.
 
+Visa det aktuella Device ID på en webbsida.
 
+(Kommande) Namnge NFC-taggar via en separat endpoint.
 
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
+Struktur
 
-## Example folder contents
-
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
-
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
-
-Below is short explanation of remaining files in the project folder.
-
-```
-├── CMakeLists.txt
 ├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+│   └── http_server.c      Implementerar HTTP-servern med endpoints `/` och `/set`
+│   └── http_client.c      Hjälper till med POST-anrop mot Google Apps Script
+│   └── nfc_communication.c Initierar PN532 och läser NFC-UID
+│   └── http_server.h
+│   └── http_client.h
+│   └── nfc_communication.h
+│   └── printer.h          Makron för loggutskrifter (PR_*)
+│   └── wifi.c/h           (Valfritt) Wi‑Fi-setup, start av HTTP-server
+├── CMakeLists.txt         ESP-IDF projektdefinition
+└── README.md              Denna fil
+
+Komma igång
+
+Installera och konfigurera ESP-IDF enligt officiell guide.
+
+Klona detta exempel eller kopiera filerna till din projektmapp.
+
+Konfigurera Wi‑Fi-uppgifter i sdkconfig (SSID, lösenord).
+
+Kör:
+
+idf.py set-target esp32
+idf.py menuconfig    # justera eventuellt andra inställningar
+idf.py build
+idf.py flash monitor
+
+Endpoints
+
+GET /
+
+Visar huvud­sidan där du kan ange Device ID.
+
+Fältet är förifyllt med sparat värde från NVS.
+
+GET /set?device=
+
+Tar emot nytt Device ID (1–999) via URL-param.
+
+Sparar i NVS och anropar Google Apps Script för registrering.
+
+Returnerar omdirigering till / med resultat.
+
+Anpassning för Google Apps Script
+
+Alla anrop mot ditt Apps Script-steg körs via SCRIPT_URL i nfc_communication.h.
+Uppdatera den till din egen endpoint.
+
+Payload för registerDevice:
+
+{ "action":"registerDevice", "mac":"AA:BB:...", "device_id":"123", "url":"", "desc":"" }
+
+Nästa steg
+
+Implementera UI och endpoint /tag för att namnge NFC-taggar.
+
+Visa senaste blippade UID och eventuellt namn på huvud­sidan.
+
+Följa upp med logik för att hämta och uppdatera tagg­listan i kalkyl­arket.
