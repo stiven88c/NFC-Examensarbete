@@ -3,15 +3,21 @@
 
 #include "esp_err.h"
 
-#define API_URL "https://prs-cdp-dev-shopservice-webapp.azurewebsites.net"
-#define API_KEY_HEADER "x-apikey"
-#define API_KEY_VALUE "dpytEp8LkUgqu0r5ZPpQpo9iO4h8csty"
+
+void http_client_init_sntp(void);
+
+esp_err_t log_event_request(const char *script_url, const char *uid);
 
 
+esp_err_t register_device_request(const char *script_url,
+                                  const char *mac,
+                                  const char *device_id,
+                                  const char *url,
+                                  const char *desc);
 
-esp_err_t create_tag_request(const char *base_url, const char *uid, const char *short_id);
-esp_err_t block_tag_request(const char *base_url, const char *tag_technology_family, const char *uid, int *status_code);
-esp_err_t update_tag_request(const char *base_url, const char *tag_technology_family, const char *uid);
 
+esp_err_t name_tag_request(const char *script_url,
+                           const char *uid,
+                           const char *name);
 
-#endif 
+#endif // HTTP_CLIENT_H

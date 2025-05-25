@@ -46,10 +46,10 @@ static xQueueHandle IRQQueue = NULL;
 
 
 
-#define CONFIG_PN532DEBUG 
+//#define CONFIG_PN532DEBUG 
 //#define CONFIG_MIFAREDEBUG 
-#define CONFIG_IRQDEBUG 
-#define CONFIG_ENABLE_IRQ_ISR 
+//#define CONFIG_IRQDEBUG 
+//#define CONFIG_ENABLE_IRQ_ISR 
 
 #define PN532_PACKBUFFSIZ 64
 uint8_t pn532_packetbuffer[PN532_PACKBUFFSIZ];
@@ -434,7 +434,7 @@ bool sendCommandCheckAck (uint8_t *cmd, uint8_t cmdlen, uint16_t timeout)
   }
 
     // Logga ACK-mottagande
-    ESP_LOGI(TAG, "ACK received for command: %02X", cmd[0]); // Logga vilket kommando som bekräftades
+    // **jag tog bort** ESP_LOGI(TAG, "ACK received for command: %02X", cmd[0]); // Logga vilket kommando som bekräftades
 
   return true; // ack'd command
 }

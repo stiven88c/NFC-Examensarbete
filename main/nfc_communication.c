@@ -1,90 +1,115 @@
 #include "nfc_communication.h"
 #include "esp_log.h"
+#include "driver/i2c.h"
 #include "lib/pn532.h"
-#include "test.h"
+#include "printer.h"
 #include "http_client.h"
-#include "http_server.h"
+#include "nvs.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <string.h>
+#include <stdio.h> 
 
-// Definiera GPIO-pinnar för PN532
-#define SCL_PIN 22
-#define SDA_PIN 23
-#define RESET_PIN 21
-#define IRQ_PIN 12
-#define PN532_I2C_PORT 0
+#define SCL_PIN          22
+#define SDA_PIN          23
+#define RESET_PIN        21
+#define IRQ_PIN          12
+#define I2C_PORT         I2C_NUM_0
+#define I2C_FREQ_HZ      100000
 
-#define TAG "NFC_COMMUNICATION"
+static const char *TAG = "NFC_CLIENT";
 
-
-void init_nfc() {
-    esp_err_t ret = init_PN532_I2C(SDA_PIN, SCL_PIN, RESET_PIN, IRQ_PIN, PN532_I2C_PORT);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "NFC initialization failed");
-        return;
+// ------------------------------------------------------
+// Helper: turn a byte-array UID into a hex string (upper-case)
+// ------------------------------------------------------
+static void convertUidToHex(const uint8_t *uid, uint8_t uidLength, char *uidHex)
+{
+    for (uint8_t i = 0; i < uidLength; i++) {
+        sprintf(uidHex + i*2, "%02X", uid[i]);
     }
+    uidHex[uidLength*2] = '\0';
+}
 
-    uint32_t firmware_version = getPN532FirmwareVersion();
-    if (firmware_version != 0) {
-        ESP_LOGI(TAG, "PN532 Firmware Version: 0x%06X", (unsigned int)firmware_version);
+// Global definition
+char latest_device_id[16] = "";
+
+// Läs sparat device_id från NVS
+void load_device_id(char *out, size_t max_len)
+{
+    nvs_handle_t h;
+    if (nvs_open("storage", NVS_READONLY, &h) == ESP_OK) {
+        size_t len = max_len;
+        if (nvs_get_str(h, "device_id", out, &len) != ESP_OK) {
+            out[0] = '\0';
+        }
+        nvs_close(h);
     } else {
-        ESP_LOGE(TAG, "Failed to get firmware version");
-    }
-
-    uint8_t irq_setting = 0x01;
-    uint8_t timeout_setting = 1;
-    if (!SAMConfig(irq_setting, timeout_setting)) {
-        ESP_LOGE(TAG, "Failed to configure SAM");
-        return;
+        out[0] = '\0';
     }
 }
 
-void nfc_communication() {
-    uint8_t uid[7];
-    uint8_t uidLength;
-    uint16_t timeout_ms = 1000;
+void init_nfc(void)
+{
+    // 1) I²C-konfiguration
+    i2c_config_t cfg = {
+        .mode             = I2C_MODE_MASTER,
+        .sda_io_num       = SDA_PIN,
+        .scl_io_num       = SCL_PIN,
+        .sda_pullup_en    = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en    = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = I2C_FREQ_HZ,
+    };
+    ESP_ERROR_CHECK(i2c_param_config(I2C_PORT, &cfg));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_PORT, I2C_MODE_MASTER, 0, 0, 0));
 
-    bool success = readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, timeout_ms);
-
-    if (success) {
-        ESP_LOGI(TAG, "Found NFC tag with UID:");
-        for (uint8_t i = 0; i < uidLength; i++) {
-            ESP_LOGI(TAG, "UID[%d]: %d", i, uid[i]);
-        }
-
-        char uidHex[15];
-        convertUidToHex(uid, uidLength, uidHex);
-        ESP_LOGI(TAG, "UID in hex: %s", uidHex);
-
-        int status_code;
-        esp_err_t delete_result = block_tag_request(API_URL, "Unknown", uidHex, &status_code);
-
-        if (status_code == HTTP_STATUS_NOT_FOUND) {
-            ESP_LOGE(TAG, "Tag not found, generating short UID");
-            char short_uid[9];
-            generate_random_shortID(short_uid, sizeof(short_uid));
-            ESP_LOGI(TAG, "Generated short UID: %s", short_uid);
-
-            esp_err_t post_result = create_tag_request(API_URL, uidHex, short_uid);
-            if (post_result != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to send POST request");
-            } else {
-                ESP_LOGI(TAG, "POST request sent successfully");
-                show_message("Välkommen till IT avdelningen!", 1000); // Meddelande för ny tag
-            }
-        } else if (status_code == HTTP_STATUS_CONFLICT) {
-            show_message("Välkommen till jobbet!", 1000); // Meddelande ut
-            ESP_LOGE(TAG, "TagAlreadyBlocked, sending PATCH request");
-            esp_err_t patch_result = update_tag_request(API_URL, "Unknown", uidHex);
-            if (patch_result != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to send PATCH request");
-            } else {
-                ESP_LOGI(TAG, "PATCH request sent successfully");
-            }
-        } else {
-            show_message("Tack för idag, hoppas vi syns imorgon!", 1000); // Meddelande för blockerat tag
-        }
-
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    } else {
-        ESP_LOGE(TAG, "No NFC tag found or read failed");
+    // 2) Initiera PN532
+    if (init_PN532_I2C(SDA_PIN, SCL_PIN, RESET_PIN, IRQ_PIN, I2C_PORT) != ESP_OK) {
+        PR_NFC("Init PN532 misslyckades");
+        return;
     }
+
+    // 3) Läs firmware-version och konfigurera SAM
+    uint32_t fw = getPN532FirmwareVersion();
+    if (fw) {
+        PR_NFC("PN532 FW Version: 0x%06X", (unsigned int)fw);
+        SAMConfig(0x01, 1);
+    } else {
+        PR_NFC("Ingen firmwareversion");
+    }
+}
+
+void nfc_communication(void)
+{
+    uint8_t uid[7];
+    uint8_t uidLength = 0;
+
+    // Läs passiv tag
+    if (!readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 1000)) {
+        PR_NFC("Ingen NFC-tag hittad");
+        return;
+    }
+
+    // Konvertera UID till hex-sträng
+    char uidHex[16];
+    convertUidToHex(uid, uidLength, uidHex);
+    PR_NFC("UID: %s", uidHex);
+
+    // Logga till Google Sheet
+    if (log_event_request(SCRIPT_URL, uidHex) == ESP_OK) {
+        PR_NFC("Loggning lyckades");
+    } else {
+        PR_NFC("Loggning misslyckades");
+    }
+
+    // Läs sparat device_id och uppdatera latest_device_id
+    char dev[16];
+    load_device_id(dev, sizeof(dev));
+    if (dev[0]) {
+        // Spara i global
+        strncpy(latest_device_id, dev, sizeof(latest_device_id) - 1);
+        latest_device_id[sizeof(latest_device_id) - 1] = '\0';
+        PR_NFC("Device ID: %s", latest_device_id);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(500));
 }

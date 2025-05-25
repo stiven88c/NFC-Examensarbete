@@ -12,3 +12,35 @@ menu "PN532 Options"
 		bool "Enable IRQ Pin related debug messages"
 		default false
 endmenu
+
+menu "Wi-Fi Configuration"
+
+	config WIFI_SSID
+		string "Wi-Fi SSID"
+		default "myssid"
+		help
+		  Ange SSID för nätverket.
+	
+	config WIFI_PASSWORD
+		string "Wi-Fi Password"
+		default "mypassword"
+		help
+		  Ange lösenord för nätverket.
+	
+	endmenu
+
+	menu "API Configuration"
+
+		config API_URL
+			string "API url"
+			default "mmyAPIurl"
+			help
+			  Ange URL adressen för API anropen.
+		
+		config AKI_KEY
+			string "API Key"
+			default "myAPIkey"
+			help
+			  Ange API nyckeln.
+		
+		endmenu
